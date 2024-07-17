@@ -2,21 +2,31 @@ from flask import Flask, render_template, request
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
 import re
-
+from markupsafe import Markup
 app = Flask(__name__)
 
 es = Elasticsearch(["http://localhost:9200"])
 model = SentenceTransformer('all-MiniLM-L6-v2')
 index_name = "philosopher_quotes"
 
+
 @app.template_filter('highlight')
 def highlight_filter(text, query):
     if not query:
         return text
-    words = query.split()
-    for word in words:
-        text = re.sub(f'(?i){re.escape(word)}', lambda m: f'<span class="highlight">{m.group()}</span>', text)
-    return text
+
+    # Sort words by length, longest first
+    words = sorted(query.split(), key=len, reverse=True)
+
+    # Compile a single regex pattern for all words
+    pattern = '|'.join(re.escape(word) for word in words)
+    regex = re.compile(f'({pattern})', re.IGNORECASE)
+
+    # Replace all matches with highlighted version
+    highlighted = regex.sub(lambda m: f'<span class="highlight">{m.group()}</span>', text)
+
+    # Mark the result as safe HTML
+    return Markup(highlighted)
 
 @app.route('/', methods=['GET', 'POST'])
 def search():
